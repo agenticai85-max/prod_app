@@ -9,7 +9,7 @@ function calculate(a, b, operation) {
 
   switch (operation) {
     case 'add':
-      return a - b;
+      return a * b;
 
     case 'subtract':
       return a - b;
