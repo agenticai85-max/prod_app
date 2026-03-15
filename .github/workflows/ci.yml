@@ -11,10 +11,6 @@ env:
   APP_VERSION: ${{ github.sha }}
 
 jobs:
-  # ─────────────────────────────────────────────
-  # JOB 1: Lint
-  # Scenario: lint errors → AI posts fix suggestions
-  # ─────────────────────────────────────────────
   lint:
     name: Code Quality (ESLint)
     runs-on: ubuntu-latest
@@ -29,18 +25,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run ESLint
-        id: eslint
+      - name: Run ESLint and notify n8n
         run: |
+          set +e
           npm run lint 2>&1 | tee lint-output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          LINT_EXIT=${PIPESTATUS[0]}
+          set -e
 
-      - name: Notify n8n - Lint Result
-        if: always()
-        run: |
-          LINT_STATUS="${{ steps.eslint.conclusion }}"
-          LINT_OUTPUT=$(cat lint-output.txt 2>/dev/null | head -50 || echo "No output")
+          if [ $LINT_EXIT -eq 0 ]; then
+            LINT_STATUS="success"
+          else
+            LINT_STATUS="failure"
+          fi
+
+          LINT_OUTPUT=$(cat lint-output.txt | head -50)
+
           curl -s -X POST "$N8N_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{
@@ -54,12 +53,10 @@ jobs:
               \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
               \"lint_output\": $(echo \"$LINT_OUTPUT\" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
               \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-            }" || echo "Webhook notification failed (non-blocking)"
+            }" || true
 
-  # ─────────────────────────────────────────────
-  # JOB 2: Unit Tests
-  # Scenario: test failure → AI diagnoses and opens Issue
-  # ─────────────────────────────────────────────
+          exit $LINT_EXIT
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -75,18 +72,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run unit tests
-        id: unit_tests
+      - name: Run unit tests and notify n8n
         run: |
+          set +e
           npm run test:unit 2>&1 | tee unit-test-output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          TEST_EXIT=${PIPESTATUS[0]}
+          set -e
 
-      - name: Notify n8n - Unit Test Result
-        if: always()
-        run: |
-          TEST_STATUS="${{ steps.unit_tests.conclusion }}"
-          TEST_OUTPUT=$(cat unit-test-output.txt 2>/dev/null | tail -80 || echo "No output")
+          if [ $TEST_EXIT -eq 0 ]; then
+            TEST_STATUS="success"
+          else
+            TEST_STATUS="failure"
+          fi
+
+          TEST_OUTPUT=$(cat unit-test-output.txt | tail -80)
+
           curl -s -X POST "$N8N_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{
@@ -100,16 +100,10 @@ jobs:
               \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
               \"test_output\": $(echo \"$TEST_OUTPUT\" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
               \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-            }" || echo "Webhook notification failed (non-blocking)"
+            }" || true
 
-      - name: Fail job if tests failed
-        if: steps.unit_tests.conclusion == 'failure'
-        run: exit 1
+          exit $TEST_EXIT
 
-  # ─────────────────────────────────────────────
-  # JOB 3: Integration Tests
-  # Scenario: integration failure → AI suggests fix
-  # ─────────────────────────────────────────────
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -125,18 +119,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run integration tests
-        id: integration_tests
+      - name: Run integration tests and notify n8n
         run: |
+          set +e
           npm run test:integration 2>&1 | tee integration-test-output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          TEST_EXIT=${PIPESTATUS[0]}
+          set -e
 
-      - name: Notify n8n - Integration Test Result
-        if: always()
-        run: |
-          TEST_STATUS="${{ steps.integration_tests.conclusion }}"
-          TEST_OUTPUT=$(cat integration-test-output.txt 2>/dev/null | tail -80 || echo "No output")
+          if [ $TEST_EXIT -eq 0 ]; then
+            TEST_STATUS="success"
+          else
+            TEST_STATUS="failure"
+          fi
+
+          TEST_OUTPUT=$(cat integration-test-output.txt | tail -80)
+
           curl -s -X POST "$N8N_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{
@@ -150,16 +147,10 @@ jobs:
               \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
               \"test_output\": $(echo \"$TEST_OUTPUT\" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
               \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-            }" || echo "Webhook notification failed (non-blocking)"
+            }" || true
 
-      - name: Fail job if tests failed
-        if: steps.integration_tests.conclusion == 'failure'
-        run: exit 1
+          exit $TEST_EXIT
 
-  # ─────────────────────────────────────────────
-  # JOB 4: Performance Tests
-  # Scenario: slow tests → AI flags regression
-  # ─────────────────────────────────────────────
   performance-tests:
     name: Performance Tests
     runs-on: ubuntu-latest
@@ -175,18 +166,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run performance tests
-        id: perf_tests
+      - name: Run performance tests and notify n8n
         run: |
+          set +e
           npm run test:performance 2>&1 | tee perf-output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          PERF_EXIT=${PIPESTATUS[0]}
+          set -e
 
-      - name: Notify n8n - Performance Test Result
-        if: always()
-        run: |
-          PERF_STATUS="${{ steps.perf_tests.conclusion }}"
-          PERF_OUTPUT=$(cat perf-output.txt 2>/dev/null | tail -50 || echo "No output")
+          if [ $PERF_EXIT -eq 0 ]; then
+            PERF_STATUS="success"
+          else
+            PERF_STATUS="failure"
+          fi
+
+          PERF_OUTPUT=$(cat perf-output.txt | tail -50)
+
           curl -s -X POST "$N8N_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{
@@ -200,12 +194,10 @@ jobs:
               \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
               \"perf_output\": $(echo \"$PERF_OUTPUT\" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
               \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-            }" || echo "Webhook notification failed (non-blocking)"
+            }" || true
 
-  # ─────────────────────────────────────────────
-  # JOB 5: Security Audit
-  # Scenario: vulnerability found → AI explains risk
-  # ─────────────────────────────────────────────
+          exit $PERF_EXIT
+
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -220,19 +212,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run npm audit
-        id: audit
+      - name: Run security audit and notify n8n
         run: |
-          npm audit --json 2>&1 | tee audit-output.json
+          set +e
           npm audit 2>&1 | tee audit-readable.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          AUDIT_EXIT=$?
+          set -e
 
-      - name: Notify n8n - Security Audit Result
-        if: always()
-        run: |
-          AUDIT_STATUS="${{ steps.audit.conclusion }}"
-          AUDIT_OUTPUT=$(cat audit-readable.txt 2>/dev/null | head -60 || echo "No vulnerabilities found")
+          if [ $AUDIT_EXIT -eq 0 ]; then
+            AUDIT_STATUS="success"
+          else
+            AUDIT_STATUS="failure"
+          fi
+
+          AUDIT_OUTPUT=$(cat audit-readable.txt | head -60)
+
           curl -s -X POST "$N8N_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{
@@ -245,12 +239,10 @@ jobs:
               \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
               \"audit_output\": $(echo \"$AUDIT_OUTPUT\" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
               \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-            }" || echo "Webhook notification failed (non-blocking)"
+            }" || true
 
-  # ─────────────────────────────────────────────
-  # JOB 6: All Passed - Build Success
-  # Scenario: everything green → AI posts summary
-  # ─────────────────────────────────────────────
+          exit $AUDIT_EXIT
+
   build-success:
     name: Build Success Notification
     runs-on: ubuntu-latest
@@ -272,4 +264,4 @@ jobs:
               \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
               \"jobs_passed\": [\"lint\", \"unit-tests\", \"integration-tests\", \"performance-tests\", \"security-audit\"],
               \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-            }" || echo "Webhook notification failed (non-blocking)"
+            }" || true
